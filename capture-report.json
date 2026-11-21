@@ -1,0 +1,98 @@
+[
+  {
+    "name": "1-solara-street.png",
+    "bytes": 168890,
+    "dimensions": [
+      1280,
+      720
+    ],
+    "state": {
+      "screen": "play",
+      "mission": 5,
+      "wanted": 0,
+      "inCar": false,
+      "briefing": false,
+      "objective": {
+        "x": 760.2356486933415,
+        "y": 512.5389195421823
+      },
+      "player": {
+        "x": 692.4402985229078,
+        "y": 410.84589428653163
+      }
+    },
+    "consoleErrors": []
+  },
+  {
+    "name": "2-midnight-pursuit.png",
+    "bytes": 189885,
+    "dimensions": [
+      1280,
+      720
+    ],
+    "state": {
+      "screen": "play",
+      "mission": 4,
+      "wanted": 3,
+      "inCar": true,
+      "briefing": false,
+      "objective": {
+        "x": -168.3141304610739,
+        "y": 749.3937768887159
+      },
+      "player": {
+        "x": 559.7287910426145,
+        "y": 376.2717796180756
+      }
+    },
+    "consoleErrors": []
+  },
+  {
+    "name": "3-harbor-briefing.png",
+    "bytes": 144959,
+    "dimensions": [
+      1280,
+      720
+    ],
+    "state": {
+      "screen": "play",
+      "mission": 3,
+      "wanted": 0,
+      "inCar": false,
+      "briefing": true,
+      "objective": {
+        "x": 865.9863047019842,
+        "y": 184.86010180344917
+      },
+      "player": {
+        "x": 640,
+        "y": 410.8464065054333
+      }
+    },
+    "consoleErrors": []
+  },
+  {
+    "name": "4-night-shift.png",
+    "bytes": 100061,
+    "dimensions": [
+      1280,
+      720
+    ],
+    "state": {
+      "screen": "title",
+      "mission": 1,
+      "wanted": 0,
+      "inCar": false,
+      "briefing": false,
+      "objective": {
+        "x": -867.0673629155108,
+        "y": -466.52645163822774
+      },
+      "player": {
+        "x": 785.9845005681126,
+        "y": 402.75082140057424
+      }
+    },
+    "consoleErrors": []
+  }
+]

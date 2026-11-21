@@ -1,124 +1,54 @@
-// The game's rules and state, with no drawing and no browser in it: the player's paddle, the
-// pool of falling blocks and coins, spawning, collisions, score, lives and level. step() advances
-// one fixed step and returns what happened as bit flags, so the caller can react without the
-// world knowing about screens or sound. Nothing here allocates after createWorld returns.
-import { BLOCK, COIN, FIELD, LEVEL, LIVES, PLAYER, POOL_SIZE } from './config.js';
-
-export const KIND_BLOCK = 0;
-export const KIND_COIN = 1;
-
-export const EVENT_HIT = 1;
-export const EVENT_COIN = 2;
-export const EVENT_OVER = 4;
-
-function overlaps(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+// Fixed-step arcade physics, witnesses, road-following traffic and budgeted pursuit AI.
+import {W,H,XS,YS,makeCity,solid,lineClear,nearestRoad,nextNode,shops} from './city.js';
+import {advanceMission,failMission,beginMission} from './missions.js';
+export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+export const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+export const TYPES=[{name:'Vesper Coupe',color:'#f17874',length:57,width:28,max:310,acc:235,grip:4.5},{name:'Morrow Van',color:'#e2bc77',length:69,width:33,max:205,acc:145,grip:6},{name:'Kite Hatch',color:'#5fc8be',length:48,width:26,max:250,acc:205,grip:7},{name:'Rook Sedan',color:'#a2a5cd',length:59,width:29,max:265,acc:180,grip:5.5}];
+export function createWorld(){const city=makeCity(),cars=[],people=[],police=[],guards=[];
+ for(let i=0;i<28;i++){const node={x:XS[i%6],y:YS[Math.floor(i/6)]},dir=i%4;const next=nextNode(node,dir);cars.push(makeCar(i,node.x,node.y,TYPES[i%4],i%5===0,next));}
+ const coupe=makeCar(90,990,1130,TYPES[0],true,nextNode({x:1040,y:1040},0));coupe.missionCar=true;cars.push(coupe);
+ for(let i=0;i<48;i++){let ix=i%6,iy=Math.floor(i/6)%4;people.push({id:i,x:XS[ix]+(i%2?64:-64),y:YS[iy]+80+(i%3)*40+Math.floor(i/24)*55,angle:Math.PI/2*(i%4),health:65,panic:0,walk:i*.5,color:['#d48b7d','#e4c17e','#84b9b4','#9c9ac1'][i%4],cooldown:0});}
+ const w={city,cars,people,police,guards,particles:[],bullets:[],skids:[],player:{x:240,y:440,angle:-Math.PI/2,health:100,armour:60,cash:450,wanted:0,inCar:false,car:null,ammo:72,clip:12,reload:0,invuln:0},mission:0,completed:0,checkpoint:0,active:false,briefing:false,timer:0,hold:0,failed:'',screen:'title',paused:false,heat:0,seen:false,hidden:0,arrest:0,clock:17.6,time:0,aiTime:0,shake:0,toast:'',toastTime:0,fireCooldown:0,meleeCooldown:0,events:[],saveRequested:false,settings:{volume:.35,sensitivity:1},stats:{stolen:0,shots:0,distance:0},finale:false};return w;}
+function makeCar(id,x,y,type,parked,next){return {id,x,y,type,angle:next.dir*Math.PI/2,speed:0,vx:0,vy:0,health:100,parked,occupied:!parked,target:next.node,dir:next.dir,turns:0,driver:null,police:false,flash:0};}
+export function notify(w,t){w.toast=t;w.toastTime=3;w.events.push('ui');}
+export function crime(w,amount=1){const p=w.player;p.wanted=clamp(Math.max(1,p.wanted)+amount,1,5);w.heat=12;w.hidden=0;}
+export function nearestCar(w){return [...w.cars,...w.police].filter(c=>c.health>0&&distance(c,w.player)<78).sort((a,b)=>distance(a,w.player)-distance(b,w.player))[0];}
+export function interact(w){const p=w.player;if(p.inCar){const car=p.car;if(Math.abs(car.speed)>95)return notify(w,'Brake before getting out.');let x=car.x+Math.sin(car.angle)*48,y=car.y-Math.cos(car.angle)*48;if(solid(w.city,x,y,9)){x=car.x-Math.sin(car.angle)*48;y=car.y+Math.cos(car.angle)*48;}if(solid(w.city,x,y,9))return notify(w,'No room to exit here.');p.x=x;p.y=y;p.car=null;p.inCar=false;car.driver=null;car.parked=true;car.occupied=false;notify(w,'ON FOOT');return;}
+ const shop=shops.find(s=>Math.hypot(p.x-s.x,p.y-s.y)<70);if(shop){if(p.cash<shop.cost)return notify(w,'Not enough cash.');p.cash-=shop.cost;if(shop.kind==='health')p.health=100;if(shop.kind==='armour')p.armour=100;if(shop.kind==='ammo'){p.ammo+=48;p.clip=12;}if(shop.kind==='repair'){for(const c of [...w.cars,...w.police])if(distance(c,p)<120)c.health=100;}notify(w,shop.name+' / RESTORED');return;}
+ const car=nearestCar(w);if(!car)return notify(w,'Find a car or service marker.');if(car.occupied){const a=car.angle+Math.PI/2;w.people.push({id:1000+w.stats.stolen,x:car.x+Math.cos(a)*45,y:car.y+Math.sin(a)*45,angle:a,health:65,panic:8,walk:0,color:'#d4a77b',cooldown:0});}car.driver='player';car.parked=false;car.occupied=false;p.inCar=true;p.car=car;p.x=car.x;p.y=car.y;w.stats.stolen++;crime(w,car.police?2:.1);notify(w,car.type.name+' / STOLEN');}
+export function burst(w,x,y,color,n=8){for(let i=0;i<n;i++){const a=i*2.399;w.particles.push({x,y,vx:Math.cos(a)*(20+i*5),vy:Math.sin(a)*(20+i*5),life:.5+Math.random()*.4,max:1,color});}if(w.particles.length>150)w.particles.splice(0,w.particles.length-150);}
+export function damagePlayer(w,damage){const p=w.player;if(p.invuln>0)return;const absorb=Math.min(p.armour,damage*.7);p.armour-=absorb;p.health-=damage-absorb;p.invuln=.12;w.shake=.18;if(p.health<=0)die(w,'WASTED');}
+export function die(w,kind){w.screen=kind.toLowerCase();w.active=false;w.failed='The job was interrupted. Retry from the last checkpoint.';w.player.health=Math.max(0,w.player.health);w.events.push('down');}
+export function respawn(w){const p=w.player;if(p.car){p.car.driver=null;p.car.parked=true;}Object.assign(p,{x:440,y:640,health:100,armour:30,wanted:0,inCar:false,car:null,clip:12,ammo:Math.max(36,p.ammo),invuln:3,cash:Math.max(0,p.cash-150)});w.police=[];w.guards=[];w.heat=0;w.arrest=0;w.screen='play';w.briefing=w.mission<5;notify(w,'CLINIC / $150 recovery fee');}
+function move(w,o,dx,dy,r){let hit=false;if(!solid(w.city,o.x+dx,o.y,r))o.x+=dx;else hit=true;if(!solid(w.city,o.x,o.y+dy,r))o.y+=dy;else hit=true;return hit;}
+function spawnPolice(w){const p=w.player,node=nearestRoad(clamp(p.x+(w.police.length%2?430:-430),240,2240),clamp(p.y+300,240,1840));const c=makeCar(200+w.police.length,node.x,node.y,{name:'Sentinel Patrol',color:'#e4e8df',length:61,width:30,max:230,acc:200,grip:7},false,nextNode(node,0));c.police=true;c.shoot=1;c.route=null;c.officer={x:c.x+35,y:c.y,health:100,angle:0,walk:0,color:'#7498ab',police:true,active:false};w.guards.push(c.officer);w.police.push(c);}
+function trafficAI(w,dt){for(const c of w.cars){if(c.driver||c.parked||c.health<=0)continue;const d=distance(c,c.target);if(d<12){c.turns++;const next=nextNode(c.target,c.dir,c.turns%3===0?1:0);c.target=next.node;c.dir=next.dir;}const a=Math.atan2(c.target.y-c.y,c.target.x-c.x);const blocked=w.cars.some(o=>o!==c&&o.health>0&&distance(o,c)<60&&Math.cos(Math.atan2(o.y-c.y,o.x-c.x)-a)>.7);c.speed=blocked?0:55+(c.id%4)*8;c.angle=a;c.vx=Math.cos(a)*c.speed;c.vy=Math.sin(a)*c.speed;}
+ const p=w.player;w.seen=false;const targetCount=p.wanted?Math.min(5,Math.ceil(p.wanted)+1):0;if(w.police.length<targetCount)spawnPolice(w);
+ for(const c of w.police){if(c.driver==='player'||c.health<=0)continue;const visible=distance(c,p)<520&&lineClear(w.city,c,p);if(visible&&p.wanted>0)w.seen=true;c.shoot-=dt;
+ if(p.wanted===0){c.speed=0;c.vx=0;c.vy=0;if(c.officer)c.officer.active=false;continue;}let target=p;if(!lineClear(w.city,c,p)){const from=nearestRoad(c.x,c.y),to=nearestRoad(p.x,p.y);if(!c.route||distance(c,c.route)<28){if(distance(c,from)>45)c.route=from;else if(from.x!==to.x)c.route={x:from.x+Math.sign(to.x-from.x)*400,y:from.y};else c.route={x:from.x,y:from.y+Math.sign(to.y-from.y)*400};}target=c.route;}else c.route=null;
+ const a=Math.atan2(target.y-c.y,target.x-c.x);c.angle=a;c.speed=distance(c,p)>120?Math.min(190,95+p.wanted*18):35;c.vx=Math.cos(a)*c.speed;c.vy=Math.sin(a)*c.speed;
+ let shooter=c;if(c.officer&&c.officer.health>0&&visible&&distance(c,p)<260&&!p.inCar){if(!c.officer.active){c.officer.x=c.x+Math.sin(a)*38;c.officer.y=c.y-Math.cos(a)*38;}c.officer.active=true;c.officer.angle=Math.atan2(p.y-c.officer.y,p.x-c.officer.x);c.speed=0;c.vx=0;c.vy=0;shooter=c.officer;}else if(c.officer)c.officer.active=false;
+ if(visible&&distance(c,p)<330&&c.shoot<=0&&(!c.officer||c.officer.health>0)){c.shoot=1.6;const aim=Math.atan2(p.y-shooter.y,p.x-shooter.x)+(Math.random()-.5)*.12;w.bullets.push({x:shooter.x,y:shooter.y,vx:Math.cos(aim)*480,vy:Math.sin(aim)*480,life:.9,hostile:true});w.events.push('policeShot');}
+ }
+ for(const z of w.people){if(z.health<=0)continue;z.panic=Math.max(0,z.panic-dt);const near=distance(z,p)<65;if(near||z.panic>0){z.angle=Math.atan2(z.y-p.y,z.x-p.x);z.speed=95;}else{z.speed=26;const ahead={x:z.x+Math.cos(z.angle)*25,y:z.y+Math.sin(z.angle)*25};if(solid(w.city,ahead.x,ahead.y,9)||w.people.some(o=>o!==z&&o.health>0&&distance(o,ahead)<16))z.angle+=Math.PI/2;} }
 }
-
-export function createWorld(random) {
-  const player = { x: 0, y: FIELD.groundY - PLAYER.height, width: PLAYER.width, height: PLAYER.height, invulnerable: 0 };
-  const items = [];
-  for (let index = 0; index < POOL_SIZE; index += 1) {
-    items.push({ active: false, kind: KIND_BLOCK, x: 0, y: 0, width: 0, height: 0, speed: 0 });
-  }
-  const state = { player, items, score: 0, lives: LIVES, level: 1, elapsed: 0, blockTimer: 0, coinTimer: 0 };
-
-  function reset() {
-    player.x = (FIELD.width - player.width) / 2;
-    player.invulnerable = 0;
-    for (const item of items) item.active = false;
-    state.score = 0;
-    state.lives = LIVES;
-    state.level = 1;
-    state.elapsed = 0;
-    state.blockTimer = BLOCK.interval;
-    state.coinTimer = COIN.interval;
-  }
-
-  function freeItem() {
-    for (let index = 0; index < items.length; index += 1) if (!items[index].active) return items[index];
-    return null;
-  }
-
-  function spawnBlock() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_BLOCK;
-    item.width = BLOCK.minWidth + random() * (BLOCK.maxWidth - BLOCK.minWidth);
-    item.height = BLOCK.height;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = BLOCK.speed + BLOCK.speedPerLevel * (state.level - 1) + random() * BLOCK.speedJitter;
-  }
-
-  function spawnCoin() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_COIN;
-    item.width = COIN.size;
-    item.height = COIN.size;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = COIN.speed + COIN.speedPerLevel * (state.level - 1);
-  }
-
-  function blockInterval() {
-    return Math.max(BLOCK.minInterval, BLOCK.interval * BLOCK.intervalScale ** (state.level - 1));
-  }
-
-  /**
-   * One fixed step. `direction` is -1, 0 or 1 (left, still, right). With `harmless` set (the title
-   * screen's backdrop) things fall but nothing touches the player and nothing scores.
-   */
-  function step(dt, direction, harmless) {
-    let events = 0;
-    state.elapsed += dt;
-    state.level = Math.min(LEVEL.max, 1 + Math.floor(state.elapsed / LEVEL.seconds));
-
-    player.x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * dt));
-    if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
-
-    state.blockTimer -= dt;
-    if (state.blockTimer <= 0) {
-      spawnBlock();
-      state.blockTimer += blockInterval();
-    }
-    state.coinTimer -= dt;
-    if (state.coinTimer <= 0) {
-      spawnCoin();
-      state.coinTimer += COIN.interval + random() * COIN.intervalJitter;
-    }
-
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      if (!item.active) continue;
-      item.y += item.speed * dt;
-      if (item.y > FIELD.groundY) {
-        item.active = false;
-        if (item.kind === KIND_BLOCK && !harmless) state.score += BLOCK.dodgePoints;
-        continue;
-      }
-      if (harmless || !overlaps(item, player)) continue;
-      if (item.kind === KIND_COIN) {
-        item.active = false;
-        state.score += COIN.points;
-        events |= EVENT_COIN;
-      } else if (player.invulnerable === 0) {
-        item.active = false;
-        state.lives -= 1;
-        player.invulnerable = PLAYER.invulnerable;
-        events |= EVENT_HIT;
-        if (state.lives === 0) {
-          events |= EVENT_OVER;
-          break;
-        }
-      }
-    }
-    return events;
-  }
-
-  reset();
-  return { state, reset, step };
+export function updateWorld(w,input,dt){if(w.screen!=='play'||w.paused||w.briefing)return;const p=w.player,k=input.keys;w.time+=dt;w.clock=(w.clock+dt*.012)%24;p.invuln=Math.max(0,p.invuln-dt);w.fireCooldown=Math.max(0,w.fireCooldown-dt);w.meleeCooldown=Math.max(0,w.meleeCooldown-dt);w.shake=Math.max(0,w.shake-dt);w.toastTime=Math.max(0,w.toastTime-dt);w.heat=Math.max(0,w.heat-dt);
+ const oldx=p.x,oldy=p.y;
+ if(p.inCar){const c=p.car,t=c.type;let throttle=(k.has('KeyW')||k.has('ArrowUp')?1:0)-(k.has('KeyS')||k.has('ArrowDown')?1:0),steer=(k.has('KeyD')||k.has('ArrowRight')?1:0)-(k.has('KeyA')||k.has('ArrowLeft')?1:0);const hand=k.has('Space');c.speed+=throttle*t.acc*dt;c.speed*=Math.exp(-(hand?2.2:throttle?.16:.7)*dt);c.speed=clamp(c.speed,-95,t.max);c.angle+=steer*(hand?3.2:2.1)*dt*clamp(c.speed/75,-1,1);const grip=hand?1.6:t.grip;c.vx+=(Math.cos(c.angle)*c.speed-c.vx)*Math.min(1,grip*dt);c.vy+=(Math.sin(c.angle)*c.speed-c.vy)*Math.min(1,grip*dt);
+ if(move(w,c,c.vx*dt,c.vy*dt,19)){if(Math.abs(c.speed)>35){c.health-=Math.abs(c.speed)*.09;w.events.push('crash');burst(w,c.x,c.y,'#ffc574',8);w.shake=.3;}c.speed*=-.25;c.vx*=-.2;c.vy*=-.2;}p.x=c.x;p.y=c.y;p.angle=c.angle;if(hand&&Math.abs(c.speed)>60){w.skids.push({x:c.x,y:c.y,a:c.angle,life:8});if(w.skids.length>120)w.skids.shift();}
+ if(c.health<=0){burst(w,c.x,c.y,'#ff9b4d',25);damagePlayer(w,45);p.inCar=false;p.car=null;c.driver=null;c.parked=true;const exit=nearestRoad(c.x,c.y);p.x=exit.x;p.y=exit.y;p.invuln=1;failMission(w,'The vehicle was destroyed. Press J to retry.');}
+ }else{let dx=(k.has('KeyD')||k.has('ArrowRight')?1:0)-(k.has('KeyA')||k.has('ArrowLeft')?1:0),dy=(k.has('KeyS')||k.has('ArrowDown')?1:0)-(k.has('KeyW')||k.has('ArrowUp')?1:0);const length=Math.hypot(dx,dy)||1,sp=k.has('ShiftLeft')?185:112;move(w,p,dx/length*sp*dt,dy/length*sp*dt,9);p.angle=Math.atan2(input.aim.y-p.y,input.aim.x-p.x);if((dx||dy)&&Math.floor(w.time*3)!==Math.floor((w.time-dt)*3))w.events.push('step');}
+ w.stats.distance+=Math.hypot(p.x-oldx,p.y-oldy);
+ if(p.reload>0){p.reload-=dt;if(p.reload<=0){const n=Math.min(12-p.clip,p.ammo);p.clip+=n;p.ammo-=n;}}
+ if(input.fire&&!p.inCar&&w.fireCooldown<=0&&p.reload<=0){if(p.clip>0){p.clip--;w.stats.shots++;w.fireCooldown=.23;const a=p.angle;w.bullets.push({x:p.x+Math.cos(a)*18,y:p.y+Math.sin(a)*18,vx:Math.cos(a)*850,vy:Math.sin(a)*850,life:.7,hostile:false});burst(w,p.x+Math.cos(a)*18,p.y+Math.sin(a)*18,'#ffdf8a',3);w.shake=.07;w.events.push('shot');crime(w,.08);for(const z of w.people)if(distance(z,p)<300)z.panic=6;}else if(p.ammo>0)p.reload=1.2;}
+ if(k.has('KeyF')&&!p.inCar&&w.meleeCooldown<=0){w.meleeCooldown=.55;burst(w,p.x+Math.cos(p.angle)*22,p.y+Math.sin(p.angle)*22,'#fff3d2',5);let hit=false;for(const z of [...w.people,...w.guards.filter(g=>g.active)])if(z.health>0&&distance(z,p)<48){z.health-=35;z.panic=8;hit=true;}for(const c of w.police)if(distance(c,p)<65){c.health-=15;hit=true;}if(hit)crime(w,.2);w.events.push('punch');}
+ w.aiTime+=dt;if(w.aiTime>=.1){trafficAI(w,w.aiTime);w.aiTime=0;}
+ for(const c of [...w.cars,...w.police]){if(c.driver==='player'||c.parked||c.health<=0)continue;const hit=move(w,c,c.vx*dt,c.vy*dt,17);if(hit){c.speed=0;c.vx=0;c.vy=0;if(c.police)c.angle+=.4;}
+ if(distance(c,p)<(p.inCar?43:28)&&Math.abs(c.speed)>20){if(p.inCar){p.car.health-=8*dt;c.health-=4*dt;p.car.speed*=.98;w.shake=.1;}else{damagePlayer(w,18*dt);move(w,p,(p.x-c.x)*dt*3,(p.y-c.y)*dt*3,9);}if(!c.police)crime(w,.02);}
+ }
+ for(const z of w.people){if(z.health>0){move(w,z,Math.cos(z.angle)*z.speed*dt||0,Math.sin(z.angle)*z.speed*dt||0,8);z.walk+=dt*(z.speed||0);if(p.inCar&&Math.abs(p.car.speed)>60&&distance(z,p)<28){z.health=0;crime(w,.6);burst(w,z.x,z.y,'#d58c80',6);}}}
+ for(const b of w.bullets){b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;if(solid(w.city,b.x,b.y,2)){b.life=0;burst(w,b.x,b.y,'#ffce86',3);}if(b.hostile){if(distance(b,p)<(p.inCar?28:13)){damagePlayer(w,p.inCar?5:12);b.life=0;}}else{for(const z of [...w.people,...w.guards.filter(g=>g.active)]){if(z.health>0&&distance(b,z)<15){z.health-=40;z.panic=10;b.life=0;crime(w,.2);burst(w,z.x,z.y,'#dc9e86',4);break;}}for(const c of [...w.cars,...w.police]){if(distance(b,c)<25){c.health-=25;b.life=0;burst(w,b.x,b.y,'#ffcf74',6);break;}}}}
+ w.bullets=w.bullets.filter(b=>b.life>0);for(const q of w.particles){q.life-=dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.vx*=.97;q.vy*=.97;}w.particles=w.particles.filter(q=>q.life>0);for(const s of w.skids)s.life-=dt;w.skids=w.skids.filter(s=>s.life>0);
+ if(p.wanted>0){if(w.seen){w.hidden=0;}else if(w.heat<=0){w.hidden+=dt;if(w.hidden>7){p.wanted=Math.max(0,p.wanted-1);w.hidden=0;notify(w,p.wanted?'SEARCH WEAKENED':'PURSUIT LOST / YOU ARE CLEAR');}}const near=w.police.some(c=>c.health>0&&c.driver!=='player'&&distance(c,p)<65);if(near&&(!p.inCar||Math.abs(p.car.speed)<25)){w.arrest+=dt;if(w.arrest>6)die(w,'BUSTED');}else w.arrest=Math.max(0,w.arrest-dt*2);}
+ advanceMission(w,dt);
 }

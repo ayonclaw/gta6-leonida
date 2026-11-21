@@ -1,0 +1,5 @@
+out/
+out-repeat/
+__pycache__/
+*.pyc
+street-preview.png

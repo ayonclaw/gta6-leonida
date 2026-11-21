@@ -1,0 +1,44 @@
+{
+  "passed": 20,
+  "tests": [
+    "title screen boots",
+    "new story opens briefing",
+    "accept starts first job",
+    "synthesized Web Audio context is running",
+    "real WASD reaches first mission checkpoint",
+    "pause freezes simulation",
+    "audio volume setting responds to pointer",
+    "aim sensitivity changes",
+    "city map opens",
+    "occupied vehicle stolen with E",
+    "actual accelerator moves car",
+    "actual handbrake produces drift marks",
+    "E exits the vehicle",
+    "real mouse firing consumes ammunition",
+    "reload refills magazine",
+    "save survives browser reload",
+    "browser production mission logic completes full five-job story",
+    "finale returns to free roam",
+    "wasted screen appears",
+    "respawn restores player"
+  ],
+  "story": {
+    "completed": 5,
+    "finale": true,
+    "reward": 7100,
+    "expected": 7100
+  },
+  "performance": {
+    "frames": 301,
+    "wallSeconds": 5.008,
+    "simulationSeconds": 5.017,
+    "fps": 60.11,
+    "p95ms": 16.8
+  },
+  "consoleErrors": [],
+  "externalRequests": [],
+  "viewport": [
+    1280,
+    720
+  ]
+}
